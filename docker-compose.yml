@@ -4,5 +4,5 @@ services:
     image: rofl256/whiteboard
     restart: always
     ports:
-      - "80:80/tcp"
+      - "8080:8080/tcp"
     command: --config=./config.default.yml
