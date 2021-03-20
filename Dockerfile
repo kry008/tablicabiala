@@ -33,5 +33,5 @@ RUN npm ci --only=prod
 COPY scripts ./scripts
 COPY --from=base /opt/app/dist ./dist
 
-EXPOSE 8080
+EXPOSE 80
 ENTRYPOINT ["npm", "run", "start"]
