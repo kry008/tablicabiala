@@ -31,7 +31,7 @@ const config = {
                 use: ["style-loader", "css-loader"],
             },
             {
-                test: /\.(png|jpe?g|gif)$/i,
+                test: /\.(png|jpe?g|gif|otf|pdf)$/i,
                 use: [
                     {
                         loader: "file-loader",
@@ -48,7 +48,7 @@ const config = {
             "window.jQuery": "jquery",
             "window.$": "jquery",
         }),
-        new CopyPlugin([{ from: "assets", to: "" }]),
+        new CopyPlugin({ patterns: [{ from: "assets", to: "" }] }),
         new HtmlWebpackPlugin({
             template: "src/index.html",
             minify: false,

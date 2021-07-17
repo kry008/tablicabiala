@@ -3,6 +3,7 @@ const path = require("path");
 const config = require("./config/config");
 const ReadOnlyBackendService = require("./services/ReadOnlyBackendService");
 const WhiteboardInfoBackendService = require("./services/WhiteboardInfoBackendService");
+const { getSafeFilePath } = require("./utils");
 
 function startBackendServer(port) {
     var fs = require("fs-extra");
@@ -19,8 +20,7 @@ function startBackendServer(port) {
     var s_whiteboard = require("./s_whiteboard.js");
 
     var app = express();
-    app.use(express.static(path.join(__dirname, "..", "dist")));
-    app.use("/uploads", express.static(path.join(__dirname, "..", "public", "uploads")));
+
     var server = require("http").Server(app);
     server.listen(port);
     var io = require("socket.io")(server, { path: "/ws-api" });
@@ -29,6 +29,10 @@ function startBackendServer(port) {
     console.log("Webserver & socketserver running on port:" + port);
 
     const { accessToken, enableWebdav } = config.backend;
+
+    //Expose static folders
+    app.use(express.static(path.join(__dirname, "..", "dist")));
+    app.use("/uploads", express.static(path.join(__dirname, "..", "public", "uploads")));
 
     /**
      * @api {get} /api/loadwhiteboard Get Whiteboard Data
@@ -46,8 +50,9 @@ function startBackendServer(port) {
      *     curl -i http://[rootUrl]/api/loadwhiteboard?wid=[MyWhiteboardId]
      */
     app.get("/api/loadwhiteboard", function (req, res) {
-        const wid = req["query"]["wid"];
-        const at = req["query"]["at"]; //accesstoken
+        let query = escapeAllContentStrings(req["query"]);
+        const wid = query["wid"];
+        const at = query["at"]; //accesstoken
         if (accessToken === "" || accessToken == at) {
             const widForData = ReadOnlyBackendService.isReadOnly(wid)
                 ? ReadOnlyBackendService.getIdFromReadOnlyId(wid)
@@ -77,8 +82,9 @@ function startBackendServer(port) {
      *     curl -i http://[rootUrl]/api/getReadOnlyWid?wid=[MyWhiteboardId]
      */
     app.get("/api/getReadOnlyWid", function (req, res) {
-        const wid = req["query"]["wid"];
-        const at = req["query"]["at"]; //accesstoken
+        let query = escapeAllContentStrings(req["query"]);
+        const wid = query["wid"];
+        const at = query["at"]; //accesstoken
         if (accessToken === "" || accessToken == at) {
             res.send(ReadOnlyBackendService.getReadOnlyId(wid));
             res.end();
@@ -176,7 +182,7 @@ function startBackendServer(port) {
      * @apiParam {Number[]} d has different function on every tool you use:
      * pen: [width, height, left, top, rotation]
      *
-     * @apiSuccess {String} body returns the "done" as text
+     * @apiSuccess {String} body returns "done" as text
      * @apiError {Number} 401 Unauthorized
      */
     app.get("/api/drawToWhiteboard", function (req, res) {
@@ -220,7 +226,7 @@ function startBackendServer(port) {
             webdavaccess = false;
         }
 
-        const savingDir = path.join("./public/uploads", readOnlyWid);
+        const savingDir = getSafeFilePath("public/uploads", readOnlyWid);
         fs.ensureDir(savingDir, function (err) {
             if (err) {
                 console.log("Could not create upload folder!", err);
@@ -233,7 +239,7 @@ function startBackendServer(port) {
                     .replace(/^data:image\/png;base64,/, "")
                     .replace(/^data:image\/jpeg;base64,/, "");
                 console.log(filename, "uploaded");
-                const savingPath = path.join(savingDir, filename);
+                const savingPath = getSafeFilePath(savingDir, filename);
                 fs.writeFile(savingPath, imagedata, "base64", function (err) {
                     if (err) {
                         console.log("error", err);
@@ -331,9 +337,8 @@ function startBackendServer(port) {
                 socket.emit("whiteboardConfig", {
                     common: config.frontend,
                     whiteboardSpecific: {
-                        correspondingReadOnlyWid: ReadOnlyBackendService.getReadOnlyId(
-                            whiteboardId
-                        ),
+                        correspondingReadOnlyWid:
+                            ReadOnlyBackendService.getReadOnlyId(whiteboardId),
                         isReadOnly: ReadOnlyBackendService.isReadOnly(whiteboardId),
                     },
                 });
