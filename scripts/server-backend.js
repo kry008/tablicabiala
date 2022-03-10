@@ -26,7 +26,7 @@ function startBackendServer(port) {
     var io = require("socket.io")(server, { path: "/ws-api" });
     WhiteboardInfoBackendService.start(io);
 
-    console.log("Webserver & socketserver running on port:" + port);
+    console.log("socketserver running on port:" + port);
 
     const { accessToken, enableWebdav } = config.backend;
 
@@ -102,7 +102,7 @@ function startBackendServer(port) {
      *
      * @apiParam {Number} wid WhiteboardId you find in the Whiteboard URL
      * @apiParam {Number} [at] Accesstoken (Only if activated for this server)
-     * @apiParam {Number} current timestamp
+     * @apiParam {Number} date current timestamp
      * @apiParam {Boolean} webdavaccess set true to upload to webdav (Optional; Only if activated for this server)
      * @apiParam {String} imagedata The imagedata base64 encoded
      *
@@ -212,7 +212,7 @@ function startBackendServer(port) {
     function progressUploadFormData(formData, callback) {
         console.log("Progress new Form Data");
         const fields = escapeAllContentStrings(formData.fields);
-        const wid = fields["whiteboardId"];
+        const wid = fields["wid"];
         if (ReadOnlyBackendService.isReadOnly(wid)) return;
 
         const readOnlyWid = ReadOnlyBackendService.getReadOnlyId(wid);
@@ -315,6 +315,8 @@ function startBackendServer(port) {
             if (!whiteboardId || ReadOnlyBackendService.isReadOnly(whiteboardId)) return;
 
             content = escapeAllContentStrings(content);
+            content = purifyEncodedStrings(content);
+
             if (accessToken === "" || accessToken == content["at"]) {
                 const broadcastTo = (wid) =>
                     socket.compress(false).broadcast.to(wid).emit("drawToWhiteboard", content);
@@ -380,6 +382,46 @@ function startBackendServer(port) {
             }
         }
         return content;
+    }
+
+    //Sanitize strings known to be encoded and decoded
+    function purifyEncodedStrings(content) {
+        if (content.hasOwnProperty("t") && content["t"] === "setTextboxText") {
+            return purifyTextboxTextInContent(content);
+        }
+        return content;
+    }
+
+    function purifyTextboxTextInContent(content) {
+        const raw = content["d"][1];
+        const decoded = base64decode(raw);
+        const purified = DOMPurify.sanitize(decoded, {
+            ALLOWED_TAGS: ["div", "br"],
+            ALLOWED_ATTR: [],
+            ALLOW_DATA_ATTR: false,
+        });
+
+        if (purified !== decoded) {
+            console.warn("setTextboxText payload needed be DOMpurified");
+            console.warn("raw: " + removeControlCharactersForLogs(raw));
+            console.warn("decoded: " + removeControlCharactersForLogs(decoded));
+            console.warn("purified: " + removeControlCharactersForLogs(purified));
+        }
+
+        content["d"][1] = base64encode(purified);
+        return content;
+    }
+
+    function base64encode(s) {
+        return Buffer.from(s, "utf8").toString("base64");
+    }
+
+    function base64decode(s) {
+        return Buffer.from(s, "base64").toString("utf8");
+    }
+
+    function removeControlCharactersForLogs(s) {
+        return s.replace(/[\u0000-\u001F\u007F-\u009F]/g, "");
     }
 
     process.on("unhandledRejection", (error) => {

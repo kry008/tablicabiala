@@ -5,6 +5,7 @@ import InfoService from "./services/InfoService";
 import ThrottlingService from "./services/ThrottlingService";
 import ConfigService from "./services/ConfigService";
 import html2canvas from "html2canvas";
+import DOMPurify from "dompurify";
 
 const RAD_TO_DEG = 180.0 / Math.PI;
 const DEG_TO_RAD = Math.PI / 180.0;
@@ -237,7 +238,6 @@ const whiteboard = {
             }
             if (ReadOnlyService.readOnlyActive) return;
             _this.drawFlag = false;
-            _this.drawId++;
             _this.ctx.globalCompositeOperation = _this.oldGCO;
 
             let currentPos = Point.fromEvent(e);
@@ -270,9 +270,7 @@ const whiteboard = {
                 });
                 _this.svgContainer.find("line").remove();
             } else if (_this.tool === "pen") {
-                _this.drawId--;
                 _this.pushPointSmoothPen(currentPos.x, currentPos.y);
-                _this.drawId++;
             } else if (_this.tool === "rect") {
                 if (_this.pressedKeys.shift) {
                     if (
@@ -406,6 +404,7 @@ const whiteboard = {
                 imgDiv.draggable();
                 _this.svgContainer.find("rect").remove();
             }
+            _this.drawId++;
         };
 
         _this.mouseOverlay.on("mouseout", function (e) {
@@ -774,6 +773,14 @@ const whiteboard = {
             _this.setTextboxFontSize(_this.latestActiveTextBoxId, thickness);
         }
     },
+    imgWithSrc(url) {
+        return $(
+            DOMPurify.sanitize('<img src="' + url + '">', {
+                ALLOWED_TAGS: ["img"],
+                ALLOWED_ATTR: ["src"], // kill any attributes malicious url introduced
+            })
+        );
+    },
     addImgToCanvasByUrl: function (url) {
         var _this = this;
         var oldTool = _this.tool;
@@ -784,14 +791,14 @@ const whiteboard = {
             finalURL = imageURL + url;
         }
 
+        var img = this.imgWithSrc(finalURL).css({ width: "100%", height: "100%" });
+        finalURL = img.attr("src");
+
         _this.setTool("mouse"); //Set to mouse tool while dropping to prevent errors
         _this.imgDragActive = true;
         _this.mouseOverlay.css({ cursor: "default" });
         var imgDiv = $(
             '<div class="dragMe" style="border: 2px dashed gray; position:absolute; left:200px; top:200px; min-width:160px; min-height:100px; cursor:move;">' +
-                '<img style="width:100%; height:100%;" src="' +
-                finalURL +
-                '">' +
                 '<div style="position:absolute; right:5px; top:3px;">' +
                 '<button draw="1" style="margin: 0px 0px; background: #03a9f4; padding: 5px; margin-top: 3px; color: white;" class="addToCanvasBtn btn btn-default">Draw to canvas</button> ' +
                 '<button draw="0" style="margin: 0px 0px; background: #03a9f4; padding: 5px; margin-top: 3px; color: white;" class="addToBackgroundBtn btn btn-default">Add to background</button> ' +
@@ -801,6 +808,7 @@ const whiteboard = {
                 '<div class="rotationHandle" style="position:absolute; bottom: -30px; left: 0px; width:100%; text-align:center; cursor:ew-resize;"><i class="fa fa-undo"></i></div>' +
                 "</div>"
         );
+        imgDiv.prepend(img);
         imgDiv
             .find(".xCanvasBtn")
             .off("click")
@@ -884,20 +892,16 @@ const whiteboard = {
         dom.i2svg();
     },
     drawImgToBackground(url, width, height, left, top, rotationAngle) {
+        const px = (v) => Number(v).toString() + "px";
         this.imgContainer.append(
-            '<img crossorigin="anonymous" style="width:' +
-                width +
-                "px; height:" +
-                height +
-                "px; position:absolute; top:" +
-                top +
-                "px; left:" +
-                left +
-                "px; transform: rotate(" +
-                rotationAngle +
-                'rad);" src="' +
-                url +
-                '">'
+            this.imgWithSrc(url).css({
+                width: px(width),
+                height: px(height),
+                top: px(top),
+                left: px(left),
+                position: "absolute",
+                transform: "rotate(" + Number(rotationAngle) + "rad)",
+            })
         );
     },
     addTextBox(
@@ -933,8 +937,8 @@ const whiteboard = {
                 fontsize +
                 "em; color:" +
                 textcolor +
-                '; min-width:50px; min-height:50px"></div>' +
-                '<div title="remove textbox" class="removeIcon" style="position:absolute; cursor:pointer; top:-4px; right:2px;">x</div>' +
+                '; min-width:50px; min-height:100%;"></div>' +
+                '<div title="remove textbox" class="removeIcon" style="position:absolute; cursor:pointer; top:-3px; right:2px;"><b>🗑</b></div>' +
                 '<div title="move textbox" class="moveIcon" style="position:absolute; cursor:move; top:1px; left:2px; font-size: 0.5em;"><i class="fas fa-expand-arrows-alt"></i></div>' +
                 "</div>"
         );
@@ -1039,6 +1043,12 @@ const whiteboard = {
             .css({ "background-color": textboxBackgroundColor });
     },
     drawImgToCanvas(url, width, height, left, top, rotationAngle, doneCallback) {
+        top = Number(top); // probably not as important here
+        left = Number(left); // as it is when generating html
+        width = Number(width);
+        height = Number(height);
+        rotationAngle = Number(rotationAngle);
+
         var _this = this;
         var img = document.createElement("img");
         img.onload = function () {
@@ -1056,10 +1066,11 @@ const whiteboard = {
                 doneCallback();
             }
         };
-        img.src = url;
+
+        img.src = this.imgWithSrc(url).attr("src"); // or here - but consistent
     },
     undoWhiteboard: function (username) {
-        //Not call this directly because you will get out of sync whit others...
+        //Not call this directly because you will get out of sync whith others...
         var _this = this;
         if (!username) {
             username = _this.settings.username;
@@ -1089,7 +1100,7 @@ const whiteboard = {
         });
     },
     redoWhiteboard: function (username) {
-        //Not call this directly because you will get out of sync whit others...
+        //Not call this directly because you will get out of sync whith others...
         var _this = this;
         if (!username) {
             username = _this.settings.username;
@@ -1508,6 +1519,33 @@ function lanczosInterpolate(xm1, ym1, x0, y0, x1, y1, x2, y2, a) {
     c1 -= delta;
     c2 -= delta;
     return [cm1 * xm1 + c0 * x0 + c1 * x1 + c2 * x2, cm1 * ym1 + c0 * y0 + c1 * y1 + c2 * y2];
+}
+
+function testImage(url, callback, timeout) {
+    timeout = timeout || 5000;
+    var timedOut = false,
+        timer;
+    var img = new Image();
+    img.onerror = img.onabort = function () {
+        if (!timedOut) {
+            clearTimeout(timer);
+            callback(false);
+        }
+    };
+    img.onload = function () {
+        if (!timedOut) {
+            clearTimeout(timer);
+            callback(true);
+        }
+    };
+    img.src = url;
+    timer = setTimeout(function () {
+        timedOut = true;
+        // reset .src to invalid URL so it stops previous
+        // loading, but doesn't trigger new load
+        img.src = "//!!!!/test.jpg";
+        callback(false);
+    }, timeout);
 }
 
 export default whiteboard;
